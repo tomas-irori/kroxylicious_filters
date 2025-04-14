@@ -8,6 +8,7 @@ import io.kroxylicious.proxy.plugin.PluginConfigurationException;
 
 @Plugin(configType = Object.class)
 public class MyLoggingProduceFilterFactory implements FilterFactory<Object, Object> {
+
     @Override
     public Object initialize(FilterFactoryContext context, Object config) throws PluginConfigurationException {
         return null;
@@ -17,6 +18,7 @@ public class MyLoggingProduceFilterFactory implements FilterFactory<Object, Obje
     public Filter createFilter(FilterFactoryContext context, Object initializationData) {
         return new MyLoggingProduceFilter();
     }
+
 }
 
 

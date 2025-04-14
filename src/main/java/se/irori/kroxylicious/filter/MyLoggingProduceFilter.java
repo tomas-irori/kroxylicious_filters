@@ -12,6 +12,8 @@ import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.RecordBatch;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.concurrent.CompletionStage;
 
 @Log4j2
@@ -20,50 +22,102 @@ public class MyLoggingProduceFilter implements ProduceRequestFilter {
     @Override
     public CompletionStage<RequestFilterResult> onProduceRequest(
             final short apiVersion,
-            RequestHeaderData header,
-            ProduceRequestData request,
-            FilterContext context) {
+            RequestHeaderData requestHeaderData,
+            ProduceRequestData produceRequestData,
+            FilterContext filterContext) {
 
-        request.topicData().forEach(topicData -> {
-            for (ProduceRequestData.PartitionProduceData partitionData : topicData.partitionData()) {
-                BaseRecords baseRecords = partitionData.records();
-
-                ByteBuffer byteBuffer = null;
-                if (baseRecords instanceof MemoryRecords) {
-                    MemoryRecords memoryRecords = (MemoryRecords) baseRecords;
-                     byteBuffer = memoryRecords.buffer().duplicate(); // duplicate to avoid modifying original
-                    // Now you can read or inspect the message bytes
-                } else {
-                    // Handle other record types if necessary
-                    log.error("Unsupported record type: {}", baseRecords.getClass().getName());
+        try {
+            produceRequestData.topicData().forEach(topicData -> {
+                if (log.isTraceEnabled()) {
+                    log.trace("topicData: {}", topicData.toString());
                 }
+                for (ProduceRequestData.PartitionProduceData partitionData : topicData.partitionData()) {
+                    if (log.isTraceEnabled()) {
+                        log.trace("partitionData: {}", partitionData.toString());
+                    }
+                    BaseRecords baseRecords = partitionData.records();
+                    if (log.isTraceEnabled()) {
+                        log.trace("baseRecords: {}", baseRecords.toString());
+                    }
 
-                if (byteBuffer != null) {
-                    MemoryRecords memoryRecords = MemoryRecords.readableRecords(byteBuffer);
+                    ByteBuffer byteBuffer = null;
+                    if (baseRecords instanceof MemoryRecords) {
+                        MemoryRecords memoryRecords = (MemoryRecords) baseRecords;
+                        byteBuffer = memoryRecords.buffer().duplicate(); // duplicate to avoid modifying original
+                        // Now you can read or inspect the message bytes
+                        if (log.isTraceEnabled()) {
+                            log.trace("byteBuffer: {}", byteBuffer.toString());
+                        }
+                    } else {
+                        // Handle other record types if necessary
+                        log.error("Unsupported record type: {}", baseRecords.getClass().getName());
+                    }
 
-                    for (RecordBatch batch : memoryRecords.batches()) {
-                        for (Record record : batch) {
-                            // Access key/value
-                            ByteBuffer key = record.key();
-                            ByteBuffer value = record.value();
+                    if (byteBuffer != null) {
+                        MemoryRecords memoryRecords = MemoryRecords.readableRecords(byteBuffer);
+                        if (log.isTraceEnabled()) {
+                            log.trace("memoryRecords: {}", memoryRecords);
+                        }
+                        for (RecordBatch recordBatch : memoryRecords.batches()) {
+                            if (log.isTraceEnabled()) {
+                                log.trace("recordBatch: {}", recordBatch);
+                            }
+                            for (Record record : recordBatch) {
+                                if (log.isTraceEnabled()) {
+                                    log.trace("record: {}", record);
+                                }
+                                try {
+                                    ByteBuffer keyBuffer = record.key();
+                                    if (log.isTraceEnabled()) {
+                                        log.trace("keyBuffer: {}", keyBuffer);
+                                    }
+                                    final String keyStr = getString(keyBuffer);
+                                    log.info("keyStr: {}", keyStr);
 
-                            String keyStr = key == null ? null : new String(key.array());
-                            String valueStr = value == null ? null : new String(value.array());
 
-                            log.info("kroxylicious, key: {} value: {}", keyStr,valueStr);
-                            System.out.println("kroxylicious Key: " + keyStr);
-                            System.out.println("kroxylicious Value: " + valueStr);
+                                    ByteBuffer valueBuffer = record.value();
+                                    if (log.isTraceEnabled()) {
+                                        log.trace("valueBuffer: {}", valueBuffer);
+                                    }
+                                    final String valueStr = getString(valueBuffer);
+                                    log.info("valueStr: {}", valueStr);
 
-                            // You can now inspect/modify the record bytes — but to actually *change* the message,
-                            // you'll need to construct new records and replace the ByteBuffer in `partitionData`
-                            // (which is a bit trickier).
+                                    Arrays.stream(record.headers())
+                                            .forEach(header ->
+                                                    log.info("header, key: {} value: {}", header.key(), header.value()));
+
+                                } catch (Exception e) {
+                                    log.error("{}", e.getMessage(), e);
+                                }
+
+                                // You can now inspect/modify the record bytes — but to actually *change* the message,
+                                // you'll need to construct new records and replace the ByteBuffer in `partitionData`
+                                // (which is a bit trickier).
+                            }
                         }
                     }
-                }
-            }
-        });
 
-        return context.forwardRequest(header, request);
+
+                }
+            });
+        } catch (Exception e) {
+            log.error("{}: Message: {}", getClass().getName(), e.getMessage(), e);
+        }
+
+        log.info("exiting");
+        return filterContext.forwardRequest(requestHeaderData, produceRequestData);
+    }
+
+    private static String getString(ByteBuffer byteBuffer) {
+        String s = null;
+        if (byteBuffer != null) {
+            byte[] bytes = new byte[byteBuffer.remaining()];
+            byteBuffer.get(bytes);
+            // Reset position if you want to re-read
+            byteBuffer.rewind();
+            s = new String(bytes, StandardCharsets.UTF_8);
+        }
+        return s;
     }
 
 
