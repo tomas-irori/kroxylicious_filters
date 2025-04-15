@@ -5,18 +5,26 @@ import io.kroxylicious.proxy.filter.ProduceRequestFilter;
 import io.kroxylicious.proxy.filter.RequestFilterResult;
 import lombok.extern.log4j.Log4j2;
 import org.apache.kafka.common.compress.Compression;
+import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.message.RequestHeaderData;
 import org.apache.kafka.common.record.*;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
 
+import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 
 @Log4j2
 public class OversizeMessageFilter implements ProduceRequestFilter {
+
+    private static final int maxMessageLength = 1024; //TODO make configurable
 
     @Override
     public CompletionStage<RequestFilterResult> onProduceRequest(
@@ -74,7 +82,7 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
         return builder;
     }
 
-    private static void processRecord(Record record, MemoryRecordsBuilder builder) {
+    private void processRecord(Record record, MemoryRecordsBuilder builder) {
 
         try {
 
@@ -85,18 +93,59 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
             final String valueStr = getString(record.value());
             log.info("valueStr: {}", valueStr); //TODO remove, don't log sensitive data
 
-            final String modifiedValue = "<MODIFIED3> " + valueStr;
+            if (record.value().remaining() < maxMessageLength) {
+                builder.append(record);
+                return;
+            }
+
+            final Optional<String> optReference = persistMessageValue(valueStr);
+            if (optReference.isEmpty()) {
+                //TODO what to do if optReference is empty?
+                throw new RuntimeException("optReference is empty");
+            }
+            final String reference = optReference.get();
+
+            Header[] headers = new Header[record.headers().length + 1];
+            System.arraycopy(record.headers(), 0, headers, 0, record.headers().length);
+
+            headers[record.headers().length] = new Header() {
+                @Override
+                public String key() {
+                    return "oversize-reference";
+                }
+
+                @Override
+                public byte[] value() {
+                    return reference.getBytes();
+                }
+            };
+
 
             builder.append(
                     new SimpleRecord(
                             record.timestamp(),
                             keyByteBuffer,
-                            ByteBuffer.wrap(modifiedValue.getBytes(StandardCharsets.UTF_8)),
-                            record.headers()));
+                            null,
+                            headers));
 
         } catch (Exception e) {
             log.error("{}", e.getMessage(), e);
             throw new RuntimeException("Processing of record failed: " + e.getMessage());
+        }
+
+    }
+
+    private Optional<String> persistMessageValue(final String value) {
+        //TODO move to its own class
+
+        try {
+            File file = File.createTempFile(getClass().getName(), ".data");
+            Files.writeString(Path.of(file.getAbsolutePath()), value);
+            log.info("Wrote file: {}", file.getAbsolutePath());
+            return Optional.of(file.getAbsolutePath());
+        } catch (IOException e) {
+            log.error("Failed to create file: {}", e.getMessage(), e);
+            return Optional.empty();
         }
 
     }
