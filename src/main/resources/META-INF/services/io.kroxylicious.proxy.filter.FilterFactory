@@ -1,1 +1,1 @@
-se.irori.kroxylicious.filter.MyLoggingProduceFilterFactory
+se.irori.kroxylicious.filter.OversizeMessageFilterFactory
