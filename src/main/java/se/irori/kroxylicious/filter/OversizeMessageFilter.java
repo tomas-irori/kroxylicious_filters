@@ -34,29 +34,63 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
             FilterContext filterContext) {
 
         try {
+            final long requestSize = getRequestSize(produceRequestData);
+            log.trace("requestSize: {}", requestSize);
+            //TODO abort if requestSize too large?
+
             produceRequestData.topicData()
                     .forEach(topicData -> {
                         for (ProduceRequestData.PartitionProduceData partitionData : topicData.partitionData()) {
                             ByteBuffer byteBuffer = getByteBuffer(partitionData.records());
-                            if (byteBuffer != null) {
-                                MemoryRecordsBuilder builder = createMemoryRecordsBuilder();
-                                for (RecordBatch recordBatch : MemoryRecords.readableRecords(byteBuffer).batches()) {
-                                    for (Record record : recordBatch) {
-                                        processRecord(record, builder);
-                                    }
-                                }
-
-                                MemoryRecords modifiedRecords = builder.build();
-                                partitionData.setRecords(modifiedRecords);
+                            if (byteBuffer == null) {
+                                continue;
                             }
-
+                            MemoryRecordsBuilder builder = createMemoryRecordsBuilder();
+                            for (RecordBatch recordBatch : MemoryRecords.readableRecords(byteBuffer).batches()) {
+                                for (Record record : recordBatch) {
+                                    processRecord(record, builder);
+                                }
+                            }
+                            MemoryRecords modifiedRecords = builder.build();
+                            partitionData.setRecords(modifiedRecords);
                         }
                     });
+
         } catch (Exception e) {
             log.error("{}: Message: {}", getClass().getName(), e.getMessage(), e);
         }
 
         return filterContext.forwardRequest(requestHeaderData, produceRequestData);
+    }
+
+    private long getRequestSize(ProduceRequestData produceRequestData) {
+
+        long requestSize = 0L;
+
+        for (ProduceRequestData.TopicProduceData topicData : produceRequestData.topicData()) {
+            for (ProduceRequestData.PartitionProduceData partitionData : topicData.partitionData()) {
+                ByteBuffer byteBuffer = getByteBuffer(partitionData.records());
+                if (byteBuffer == null) {
+                    continue;
+                }
+                for (RecordBatch recordBatch : MemoryRecords.readableRecords(byteBuffer).batches()) {
+                    for (Record record : recordBatch) {
+                        requestSize += getRecordSize(record);
+                    }
+                }
+            }
+        }
+        return requestSize;
+    }
+
+    private long getRecordSize(Record record) {
+        long recordSize = record.key().remaining();
+        recordSize += record.value().remaining();
+        for (Header header : record.headers()) {
+            recordSize += header.key().length();
+            recordSize += header.value().length;
+        }
+        return recordSize;
     }
 
     private static MemoryRecordsBuilder createMemoryRecordsBuilder() {
