@@ -120,17 +120,17 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
 
         try {
 
+            if (record.value().remaining() < maxMessageLength) {
+                builder.append(record);
+                return;
+            }
+
             final String keyStr = getString(record.key()); //TODO are these double conversions needed if we don't need to log?
             final ByteBuffer keyByteBuffer = ByteBuffer.wrap(keyStr.getBytes(StandardCharsets.UTF_8));
             log.info("keyStr: {}", keyStr); //TODO remove, don't log sensitive data
 
             final String valueStr = getString(record.value());
             log.info("valueStr: {}", valueStr); //TODO remove, don't log sensitive data
-
-            if (record.value().remaining() < maxMessageLength) {
-                builder.append(record);
-                return;
-            }
 
             final Optional<String> optReference = persistMessageValue(valueStr);
             if (optReference.isEmpty()) {
@@ -196,15 +196,11 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
     }
 
     private static String getString(ByteBuffer byteBuffer) {
-        String s = null;
-        if (byteBuffer != null) {
-            byte[] bytes = new byte[byteBuffer.remaining()];
-            byteBuffer.get(bytes);
-            // Reset position if you want to re-read
-            byteBuffer.rewind();
-            s = new String(bytes, StandardCharsets.UTF_8);
-        }
-        return s;
+        if (byteBuffer == null) return null;
+        ByteBuffer readOnlyByteBuffer = byteBuffer.asReadOnlyBuffer();
+        byte[] bytes = new byte[readOnlyByteBuffer.remaining()];
+        readOnlyByteBuffer.get(bytes);
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 
 }
