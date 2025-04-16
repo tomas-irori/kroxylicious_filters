@@ -18,8 +18,13 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletionStage;
+
+import static java.lang.System.arraycopy;
+import static java.util.Objects.requireNonNull;
 
 @Log4j2
 public class OversizeMessageFilter implements ProduceRequestFilter {
@@ -41,32 +46,93 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
             produceRequestData.topicData()
                     .forEach(topicData -> {
                         for (ProduceRequestData.PartitionProduceData partitionData : topicData.partitionData()) {
-                            RecordBatchStreamer streamer = new RecordBatchStreamer(
-                                    (MemoryRecords) partitionData.records());
 
-                            MemoryRecordsBuilder builder = createMemoryRecordsBuilder();
-
-                            while (streamer.hasNext()) {
-                                Record record = streamer.next();
-                                processRecord(record, builder);
+                            BaseRecords records = partitionData.records();
+                            if (!(records instanceof MemoryRecords)) {
+                                log.warn("Unsupported record type: {}", records.getClass().getName());
+                                continue;
                             }
 
-                            MemoryRecords modifiedRecords = builder.build();
-                            partitionData.setRecords(modifiedRecords);
+                            MemoryRecords memoryRecords = (MemoryRecords) records;
+                            RecordBatchStreamer streamer = new RecordBatchStreamer(memoryRecords);
+
+                            boolean hasOversize = false;
+                            int currentSize = 0;
+                            List<MemoryRecords> chunks = new ArrayList<>();
+                            MemoryRecordsBuilder builder = null;
+
+                            while (streamer.hasNext()) {
+
+                                Record record = streamer.next();
+                                requireNonNull(record, "record is null");
+
+                                if (isTooLargeRecord(record)) {
+                                    hasOversize = true;
+
+                                    ByteBuffer keyBuf = record.key() == null ? null : record.key().duplicate();
+
+                                    Optional<String> optRef = persistMessageValue(record);
+                                    if (optRef.isEmpty()) {
+                                        throw new RuntimeException("Failed to persist oversize message");
+                                    }
+                                    final String reference = optRef.get();
+
+                                    Header[] newHeaders = new Header[record.headers().length + 1];
+                                    arraycopy(record.headers(), 0, newHeaders, 0, record.headers().length);
+                                    newHeaders[record.headers().length] = createReferenceHeader(reference);
+
+                                    if (builder == null) {
+                                        builder = createMemoryRecordsBuilder();
+                                    }
+                                    builder.append(new SimpleRecord(record.timestamp(), keyBuf, null, newHeaders));
+                                } else {
+                                    if (hasOversize) {
+                                        if (builder == null) {
+                                            builder = createMemoryRecordsBuilder();
+                                        }
+                                        builder.append(record);
+                                    }
+                                }
+
+                            }
+
+                            if (hasOversize) {
+                                requireNonNull(builder, "MemoryRecordsBuilder must not be null");
+                                partitionData.setRecords(builder.build());
+                            } else {
+                                partitionData.setRecords(memoryRecords);
+                            }
+
                         }
                     });
 
         } catch (Exception e) {
             log.error("{}: Message: {}", getClass().getName(), e.getMessage(), e);
+            throw new RuntimeException("Processing of messages failed");
         }
 
         return filterContext.forwardRequest(requestHeaderData, produceRequestData);
     }
 
+    private static Header createReferenceHeader(final String reference) {
+
+        // @formatter:off
+        return new Header() {
+            @Override public String key() { return "oversize-reference"; }
+            @Override public byte[] value() { return reference.getBytes(StandardCharsets.UTF_8); }
+        };
+        // @formatter:on
+
+    }
+
+    private static boolean isTooLargeRecord(Record record) {
+        return record.value() != null &&
+                record.value().remaining() > maxMessageLength;
+    }
+
     private long getRequestSize(ProduceRequestData produceRequestData) {
 
         long requestSize = 0L;
-
         for (ProduceRequestData.TopicProduceData topicData : produceRequestData.topicData()) {
             for (ProduceRequestData.PartitionProduceData partitionData : topicData.partitionData()) {
                 ByteBuffer byteBuffer = getByteBuffer(partitionData.records());
@@ -84,6 +150,7 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
     }
 
     private long getRecordSize(Record record) {
+
         long recordSize = record.key().remaining();
         recordSize += record.value().remaining();
         for (Header header : record.headers()) {
@@ -116,65 +183,17 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
         return builder;
     }
 
-    private void processRecord(Record record, MemoryRecordsBuilder builder) {
+    private Optional<String> persistMessageValue(final Record record) {
+        //TODO move to its own class??
 
-        try {
-
-            if (record.value().remaining() < maxMessageLength) {
-                builder.append(record);
-                return;
-            }
-
-            final String keyStr = getString(record.key()); //TODO are these double conversions needed if we don't need to log?
-            final ByteBuffer keyByteBuffer = ByteBuffer.wrap(keyStr.getBytes(StandardCharsets.UTF_8));
-            log.info("keyStr: {}", keyStr); //TODO remove, don't log sensitive data
-
-            final String valueStr = getString(record.value());
-            log.info("valueStr: {}", valueStr); //TODO remove, don't log sensitive data
-
-            final Optional<String> optReference = persistMessageValue(valueStr);
-            if (optReference.isEmpty()) {
-                //TODO what to do if optReference is empty?
-                throw new RuntimeException("optReference is empty");
-            }
-            final String reference = optReference.get();
-
-            Header[] headers = new Header[record.headers().length + 1];
-            System.arraycopy(record.headers(), 0, headers, 0, record.headers().length);
-
-            headers[record.headers().length] = new Header() {
-                @Override
-                public String key() {
-                    return "oversize-reference";
-                }
-
-                @Override
-                public byte[] value() {
-                    return reference.getBytes();
-                }
-            };
-
-
-            builder.append(
-                    new SimpleRecord(
-                            record.timestamp(),
-                            keyByteBuffer,
-                            null,
-                            headers));
-
-        } catch (Exception e) {
-            log.error("{}", e.getMessage(), e);
-            throw new RuntimeException("Processing of record failed: " + e.getMessage());
-        }
-
-    }
-
-    private Optional<String> persistMessageValue(final String value) {
-        //TODO move to its own class
+        requireNonNull(record.value(), "record.value() is null");
 
         try {
             File file = File.createTempFile(getClass().getName(), ".data");
-            Files.writeString(Path.of(file.getAbsolutePath()), value);
+            ByteBuffer readOnlyByteBuffer = record.value().asReadOnlyBuffer();
+            byte[] bytes = new byte[readOnlyByteBuffer.remaining()];
+            readOnlyByteBuffer.get(bytes);
+            Files.writeString(Path.of(file.getAbsolutePath()), new String(bytes, StandardCharsets.UTF_8));
             log.info("Wrote file: {}", file.getAbsolutePath());
             return Optional.of(file.getAbsolutePath());
         } catch (IOException e) {
@@ -185,6 +204,9 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
     }
 
     private static ByteBuffer getByteBuffer(BaseRecords baseRecords) {
+
+        requireNonNull(baseRecords, "baseRecords is null");
+
         ByteBuffer byteBuffer = null;
         if (baseRecords instanceof MemoryRecords) {
             MemoryRecords memoryRecords = (MemoryRecords) baseRecords;
@@ -193,14 +215,6 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
             log.error("Unsupported record type: {}", baseRecords.getClass().getName());
         }
         return byteBuffer;
-    }
-
-    private static String getString(ByteBuffer byteBuffer) {
-        if (byteBuffer == null) return null;
-        ByteBuffer readOnlyByteBuffer = byteBuffer.asReadOnlyBuffer();
-        byte[] bytes = new byte[readOnlyByteBuffer.remaining()];
-        readOnlyByteBuffer.get(bytes);
-        return new String(bytes, StandardCharsets.UTF_8);
     }
 
 }
