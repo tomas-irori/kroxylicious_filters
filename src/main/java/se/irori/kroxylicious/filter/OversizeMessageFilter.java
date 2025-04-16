@@ -12,12 +12,8 @@ import org.apache.kafka.common.record.*;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
 
-import java.io.File;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -30,6 +26,12 @@ import static java.util.Objects.requireNonNull;
 public class OversizeMessageFilter implements ProduceRequestFilter {
 
     private static final int maxMessageLength = 1024; //TODO make configurable
+
+    private final OversizeMessagePersistor persistor;
+
+    public OversizeMessageFilter(OversizeMessagePersistor persistor) {
+        this.persistor = persistor;
+    }
 
     @Override
     public CompletionStage<RequestFilterResult> onProduceRequest(
@@ -71,15 +73,15 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
 
                                     ByteBuffer keyBuf = record.key() == null ? null : record.key().duplicate();
 
-                                    Optional<String> optRef = persistMessageValue(record);
+                                    Optional<OversizeReference> optRef = persistor.persistValue(record);
                                     if (optRef.isEmpty()) {
                                         throw new RuntimeException("Failed to persist oversize message");
                                     }
-                                    final String reference = optRef.get();
+                                    final OversizeReference oversizeReference = optRef.get();
 
                                     Header[] newHeaders = new Header[record.headers().length + 1];
                                     arraycopy(record.headers(), 0, newHeaders, 0, record.headers().length);
-                                    newHeaders[record.headers().length] = createReferenceHeader(reference);
+                                    newHeaders[record.headers().length] = createReferenceHeader(oversizeReference);
 
                                     if (builder == null) {
                                         builder = createMemoryRecordsBuilder();
@@ -114,12 +116,14 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
         return filterContext.forwardRequest(requestHeaderData, produceRequestData);
     }
 
-    private static Header createReferenceHeader(final String reference) {
+    private static Header createReferenceHeader(final OversizeReference oversizeReference) {
 
         // @formatter:off
         return new Header() {
-            @Override public String key() { return "oversize-reference"; }
-            @Override public byte[] value() { return reference.getBytes(StandardCharsets.UTF_8); }
+            @Override public String key() {
+                return OversizeReference.HEADER_KEY; }
+            @Override public byte[] value() {
+                return oversizeReference.getRef().getBytes(StandardCharsets.UTF_8); }
         };
         // @formatter:on
 
@@ -183,25 +187,25 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
         return builder;
     }
 
-    private Optional<String> persistMessageValue(final Record record) {
-        //TODO move to its own class??
-
-        requireNonNull(record.value(), "record.value() is null");
-
-        try {
-            File file = File.createTempFile(getClass().getName(), ".data");
-            ByteBuffer readOnlyByteBuffer = record.value().asReadOnlyBuffer();
-            byte[] bytes = new byte[readOnlyByteBuffer.remaining()];
-            readOnlyByteBuffer.get(bytes);
-            Files.writeString(Path.of(file.getAbsolutePath()), new String(bytes, StandardCharsets.UTF_8));
-            log.info("Wrote file: {}", file.getAbsolutePath());
-            return Optional.of(file.getAbsolutePath());
-        } catch (IOException e) {
-            log.error("Failed to create file: {}", e.getMessage(), e);
-            return Optional.empty();
-        }
-
-    }
+//    private Optional<OversizeReference> persistMessageValue(final Record record) {
+//        //TODO move to its own class??
+//
+//        requireNonNull(record.value(), "record.value() is null");
+//
+//        try {
+//            File file = File.createTempFile(getClass().getName(), ".data");
+//            ByteBuffer readOnlyByteBuffer = record.value().asReadOnlyBuffer();
+//            byte[] bytes = new byte[readOnlyByteBuffer.remaining()];
+//            readOnlyByteBuffer.get(bytes);
+//            Files.writeString(Path.of(file.getAbsolutePath()), new String(bytes, StandardCharsets.UTF_8));
+//            log.info("Wrote file: {}", file.getAbsolutePath());
+//            return Optional.of(OversizeReference.of(file.getAbsolutePath()));
+//        } catch (IOException e) {
+//            log.error("Failed to create file: {}", e.getMessage(), e);
+//            return Optional.empty();
+//        }
+//
+//    }
 
     private static ByteBuffer getByteBuffer(BaseRecords baseRecords) {
 
