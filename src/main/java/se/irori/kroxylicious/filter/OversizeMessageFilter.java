@@ -41,16 +41,16 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
             produceRequestData.topicData()
                     .forEach(topicData -> {
                         for (ProduceRequestData.PartitionProduceData partitionData : topicData.partitionData()) {
-                            ByteBuffer byteBuffer = getByteBuffer(partitionData.records());
-                            if (byteBuffer == null) {
-                                continue;
-                            }
+                            RecordBatchStreamer streamer = new RecordBatchStreamer(
+                                    (MemoryRecords) partitionData.records());
+
                             MemoryRecordsBuilder builder = createMemoryRecordsBuilder();
-                            for (RecordBatch recordBatch : MemoryRecords.readableRecords(byteBuffer).batches()) {
-                                for (Record record : recordBatch) {
-                                    processRecord(record, builder);
-                                }
+
+                            while (streamer.hasNext()) {
+                                Record record = streamer.next();
+                                processRecord(record, builder);
                             }
+
                             MemoryRecords modifiedRecords = builder.build();
                             partitionData.setRecords(modifiedRecords);
                         }
