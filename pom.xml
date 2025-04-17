@@ -15,6 +15,13 @@
         <kroxylicious.version>0.11.0</kroxylicious.version>
     </properties>
 
+    <repositories>
+        <repository>
+            <id>confluent</id>
+            <url>https://packages.confluent.io/maven/</url>
+        </repository>
+    </repositories>
+
     <dependencies>
         <dependency>
             <groupId>io.kroxylicious</groupId>
@@ -56,10 +63,4 @@
 
     </dependencies>
 
-    <repositories>
-        <repository>
-            <id>kroxylicious</id>
-            <url>https://packages.confluent.io/maven</url>
-        </repository>
-    </repositories>
 </project>

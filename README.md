@@ -31,10 +31,10 @@ virtualClusters:
     logNetwork: false
     logFrames: false
 filterDefinitions:
-  - name: oversizeMessageFilter
-    type: OversizeMessageFilterFactory
+  - name: oversizeProduceFilter
+    type: OversizeProduceFilterFactory
     config:
       persistorType: LOCAL_TEMP_FILE
 defaultFilters:
-  - oversizeMessageFilter
+  - oversizeProduceFilter
 ```

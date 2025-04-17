@@ -13,7 +13,7 @@ import static se.irori.kroxylicious.filter.persist.OversizePersistor.Type.LOCAL_
 
 @Plugin(configType = OversizeFilterConfig.class)
 @Log4j2
-public class OversizeFilterFactory implements FilterFactory<OversizeFilterConfig, Object> {
+public class OversizeProduceFilterFactory implements FilterFactory<OversizeFilterConfig, Object> {
 
     private OversizeFilterConfig config;
 
@@ -23,9 +23,9 @@ public class OversizeFilterFactory implements FilterFactory<OversizeFilterConfig
             OversizeFilterConfig config) throws PluginConfigurationException {
 
         requireNonNull(config,
-                "OversizeMessageFilterConfig missing, check yaml config");
+                "OversizeFilterConfig missing, check yaml config");
         requireNonNull(config.persistorType(),
-                "OversizeMessageFilterConfig.persistorType() missing, check yaml config");
+                "OversizeFilterConfig.persistorType() missing, check yaml config");
 
         this.config = config;
         return config;
@@ -44,7 +44,7 @@ public class OversizeFilterFactory implements FilterFactory<OversizeFilterConfig
 
         log.info("PersistorType: {}", config.persistorType());
         if (config.persistorType() == LOCAL_TEMP_FILE) {
-            return new OversizeFilter(new TempFilePersistor());
+            return new OversizeProduceFilter(new TempFilePersistor());
         }
 
         log.error("Unsupported PersistorType: {}", config.persistorType());

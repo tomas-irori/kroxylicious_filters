@@ -24,13 +24,13 @@ import static java.lang.System.arraycopy;
 import static java.util.Objects.requireNonNull;
 
 @Log4j2
-public class OversizeFilter implements ProduceRequestFilter {
+public class OversizeProduceFilter implements ProduceRequestFilter {
 
     private static final int maxMessageLength = 1024; //TODO make configurable
 
     private final OversizePersistor persistor;
 
-    public OversizeFilter(OversizePersistor persistor) {
+    public OversizeProduceFilter(OversizePersistor persistor) {
         this.persistor = persistor;
     }
 
