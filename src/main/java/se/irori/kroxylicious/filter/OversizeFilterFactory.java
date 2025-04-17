@@ -6,20 +6,21 @@ import io.kroxylicious.proxy.filter.FilterFactoryContext;
 import io.kroxylicious.proxy.plugin.Plugin;
 import io.kroxylicious.proxy.plugin.PluginConfigurationException;
 import lombok.extern.log4j.Log4j2;
+import se.irori.kroxylicious.filter.persist.TempFilePersistor;
 
 import static java.util.Objects.requireNonNull;
-import static se.irori.kroxylicious.filter.PersistorType.LOCAL_TEMP_FILE;
+import static se.irori.kroxylicious.filter.persist.OversizePersistor.Type.LOCAL_TEMP_FILE;
 
-@Plugin(configType = OversizeMessageFilterConfig.class)
+@Plugin(configType = OversizeFilterConfig.class)
 @Log4j2
-public class OversizeMessageFilterFactory implements FilterFactory<OversizeMessageFilterConfig, Object> {
+public class OversizeFilterFactory implements FilterFactory<OversizeFilterConfig, Object> {
 
-    private OversizeMessageFilterConfig config;
+    private OversizeFilterConfig config;
 
     @Override
-    public OversizeMessageFilterConfig initialize(
+    public OversizeFilterConfig initialize(
             FilterFactoryContext context,
-            OversizeMessageFilterConfig config) throws PluginConfigurationException {
+            OversizeFilterConfig config) throws PluginConfigurationException {
 
         requireNonNull(config,
                 "OversizeMessageFilterConfig missing, check yaml config");
@@ -43,7 +44,7 @@ public class OversizeMessageFilterFactory implements FilterFactory<OversizeMessa
 
         log.info("PersistorType: {}", config.persistorType());
         if (config.persistorType() == LOCAL_TEMP_FILE) {
-            return new OversizeMessageFilter(new FileMessagePersistor());
+            return new OversizeFilter(new TempFilePersistor());
         }
 
         log.error("Unsupported PersistorType: {}", config.persistorType());

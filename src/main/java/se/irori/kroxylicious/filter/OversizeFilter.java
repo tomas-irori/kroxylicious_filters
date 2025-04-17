@@ -11,6 +11,7 @@ import org.apache.kafka.common.message.RequestHeaderData;
 import org.apache.kafka.common.record.*;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
+import se.irori.kroxylicious.filter.persist.OversizePersistor;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -23,13 +24,13 @@ import static java.lang.System.arraycopy;
 import static java.util.Objects.requireNonNull;
 
 @Log4j2
-public class OversizeMessageFilter implements ProduceRequestFilter {
+public class OversizeFilter implements ProduceRequestFilter {
 
     private static final int maxMessageLength = 1024; //TODO make configurable
 
-    private final OversizeMessagePersistor persistor;
+    private final OversizePersistor persistor;
 
-    public OversizeMessageFilter(OversizeMessagePersistor persistor) {
+    public OversizeFilter(OversizePersistor persistor) {
         this.persistor = persistor;
     }
 
@@ -73,7 +74,7 @@ public class OversizeMessageFilter implements ProduceRequestFilter {
 
                                     ByteBuffer keyBuf = record.key() == null ? null : record.key().duplicate();
 
-                                    Optional<OversizeReference> optRef = persistor.persistValue(record);
+                                    Optional<OversizeReference> optRef = persistor.storeValue(record);
                                     if (optRef.isEmpty()) {
                                         throw new RuntimeException("Failed to persist oversize message");
                                     }
