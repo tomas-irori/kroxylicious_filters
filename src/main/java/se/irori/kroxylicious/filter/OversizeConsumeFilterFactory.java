@@ -17,11 +17,7 @@ import static java.util.Objects.requireNonNull;
 
 @Plugin(configType = OversizeFilterConfig.class)
 @Log4j2
-public class OversizeProduceFilterFactory extends OversizeFilterFactory implements FilterFactory<OversizeFilterConfig, Object> {
-
-    public enum Type {
-        LOCAL_TEMP_FILE
-    }
+public class OversizeConsumeFilterFactory extends OversizeFilterFactory implements FilterFactory<OversizeFilterConfig, Object> {
 
     private OversizeFilterConfig config;
 
@@ -37,7 +33,7 @@ public class OversizeProduceFilterFactory extends OversizeFilterFactory implemen
         requireNonNull(
                 config.storageType(),
                 format("Config typ missing, check yaml config. Valid types: %s",
-                        stream(Type.values())
+                        stream(StorageType.values())
                                 .map(Enum::name)
                                 .collect(Collectors.joining(","))));
 
@@ -47,7 +43,7 @@ public class OversizeProduceFilterFactory extends OversizeFilterFactory implemen
 
     @Override
     public Filter createFilter(FilterFactoryContext context, Object initializationData) {
-        return new OversizeProduceFilter(createStorageFromConfig(config));
+        return new OversizeConsumeFilter(createStorageFromConfig(config));
     }
 
 }

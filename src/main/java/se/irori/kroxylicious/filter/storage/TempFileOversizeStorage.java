@@ -4,6 +4,7 @@ import lombok.extern.log4j.Log4j2;
 import org.apache.kafka.common.record.Record;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Optional;
 
@@ -35,7 +36,7 @@ public class TempFileOversizeStorage extends AbstractOversizeStorage {
         }
         try {
             return Optional.of(
-                    Files.readString(file.toPath()));
+                    Files.readString(file.toPath(), StandardCharsets.UTF_8));
         } catch (Exception e) {
             log.error("Error reading file: {}", oversizeValueReference.getRef());
             return Optional.empty();
