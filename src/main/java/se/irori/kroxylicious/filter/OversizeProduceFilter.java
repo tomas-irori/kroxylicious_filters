@@ -11,7 +11,8 @@ import org.apache.kafka.common.message.RequestHeaderData;
 import org.apache.kafka.common.record.*;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
-import se.irori.kroxylicious.filter.persist.OversizePersistor;
+import se.irori.kroxylicious.filter.storage.OversizeValueReference;
+import se.irori.kroxylicious.filter.storage.OversizeValueStorage;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -28,10 +29,10 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
 
     private static final int maxMessageLength = 1024; //TODO make configurable
 
-    private final OversizePersistor persistor;
+    private final OversizeValueStorage oversizeValueStorage;
 
-    public OversizeProduceFilter(OversizePersistor persistor) {
-        this.persistor = persistor;
+    public OversizeProduceFilter(OversizeValueStorage oversizeValueStorage) {
+        this.oversizeValueStorage = oversizeValueStorage;
     }
 
     @Override
@@ -74,15 +75,15 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
 
                                     ByteBuffer keyBuf = record.key() == null ? null : record.key().duplicate();
 
-                                    Optional<OversizeReference> optRef = persistor.storeValue(record);
+                                    Optional<OversizeValueReference> optRef = oversizeValueStorage.store(record);
                                     if (optRef.isEmpty()) {
                                         throw new RuntimeException("Failed to persist oversize message");
                                     }
-                                    final OversizeReference oversizeReference = optRef.get();
+                                    final OversizeValueReference oversizeValueReference = optRef.get();
 
                                     Header[] newHeaders = new Header[record.headers().length + 1];
                                     arraycopy(record.headers(), 0, newHeaders, 0, record.headers().length);
-                                    newHeaders[record.headers().length] = createReferenceHeader(oversizeReference);
+                                    newHeaders[record.headers().length] = createReferenceHeader(oversizeValueReference);
 
                                     if (builder == null) {
                                         builder = createMemoryRecordsBuilder();
@@ -117,14 +118,14 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
         return filterContext.forwardRequest(requestHeaderData, produceRequestData);
     }
 
-    private static Header createReferenceHeader(final OversizeReference oversizeReference) {
+    private static Header createReferenceHeader(final OversizeValueReference oversizeValueReference) {
 
         // @formatter:off
         return new Header() {
             @Override public String key() {
-                return OversizeReference.HEADER_KEY; }
+                return OversizeValueReference.HEADER_KEY; }
             @Override public byte[] value() {
-                return oversizeReference.getRef().getBytes(StandardCharsets.UTF_8); }
+                return oversizeValueReference.getRef().getBytes(StandardCharsets.UTF_8); }
         };
         // @formatter:on
 
