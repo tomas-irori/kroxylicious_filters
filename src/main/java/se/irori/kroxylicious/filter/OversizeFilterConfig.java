@@ -1,5 +1,7 @@
 package se.irori.kroxylicious.filter;
 
-public record OversizeFilterConfig(OversizeProduceFilterFactory.Type type) {
+import se.irori.kroxylicious.filter.storage.StorageType;
+
+public record OversizeFilterConfig(StorageType storageType) {
 }
 

@@ -73,7 +73,7 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
                                 if (isTooLargeRecord(record)) {
                                     hasOversize = true;
 
-                                    ByteBuffer keyBuf = record.key() == null ? null : record.key().duplicate();
+                                    ByteBuffer keyByteBuffer = record.key() == null ? null : record.key().duplicate();
 
                                     Optional<OversizeValueReference> optRef = oversizeValueStorage.store(record);
                                     if (optRef.isEmpty()) {
@@ -86,14 +86,17 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
                                     newHeaders[record.headers().length] = createReferenceHeader(oversizeValueReference);
 
                                     if (builder == null) {
-                                        builder = createMemoryRecordsBuilder();
+                                        builder = createMemoryRecordsBuilder(); //TODO need to close builder??
                                     }
-                                    builder.append(new SimpleRecord(record.timestamp(), keyBuf, null, newHeaders));
+
+                                    builder.append(
+                                            new SimpleRecord(
+                                                    record.timestamp(),
+                                                    keyByteBuffer,
+                                                    ByteBuffer.allocate(0),
+                                                    newHeaders));
                                 } else {
                                     if (hasOversize) {
-                                        if (builder == null) {
-                                            builder = createMemoryRecordsBuilder();
-                                        }
                                         builder.append(record);
                                     }
                                 }
@@ -103,8 +106,6 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
                             if (hasOversize) {
                                 requireNonNull(builder, "MemoryRecordsBuilder must not be null");
                                 partitionData.setRecords(builder.build());
-                            } else {
-                                partitionData.setRecords(memoryRecords);
                             }
 
                         }
@@ -188,26 +189,6 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
         );
         return builder;
     }
-
-//    private Optional<OversizeReference> persistMessageValue(final Record record) {
-//        //TODO move to its own class??
-//
-//        requireNonNull(record.value(), "record.value() is null");
-//
-//        try {
-//            File file = File.createTempFile(getClass().getName(), ".data");
-//            ByteBuffer readOnlyByteBuffer = record.value().asReadOnlyBuffer();
-//            byte[] bytes = new byte[readOnlyByteBuffer.remaining()];
-//            readOnlyByteBuffer.get(bytes);
-//            Files.writeString(Path.of(file.getAbsolutePath()), new String(bytes, StandardCharsets.UTF_8));
-//            log.info("Wrote file: {}", file.getAbsolutePath());
-//            return Optional.of(OversizeReference.of(file.getAbsolutePath()));
-//        } catch (IOException e) {
-//            log.error("Failed to create file: {}", e.getMessage(), e);
-//            return Optional.empty();
-//        }
-//
-//    }
 
     private static ByteBuffer getByteBuffer(BaseRecords baseRecords) {
 
