@@ -3,7 +3,6 @@ package se.irori.kroxylicious.filter;
 import io.kroxylicious.proxy.filter.FetchResponseFilter;
 import io.kroxylicious.proxy.filter.FilterContext;
 import io.kroxylicious.proxy.filter.ResponseFilterResult;
-import lombok.extern.log4j.Log4j2;
 import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.Headers;
@@ -13,6 +12,8 @@ import org.apache.kafka.common.message.ResponseHeaderData;
 import org.apache.kafka.common.record.*;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import se.irori.kroxylicious.filter.storage.OversizeValueReference;
 import se.irori.kroxylicious.filter.storage.OversizeValueStorage;
 
@@ -23,8 +24,9 @@ import java.util.concurrent.CompletionStage;
 
 import static java.util.Objects.requireNonNull;
 
-@Log4j2
 public class OversizeConsumeFilter implements FetchResponseFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(OversizeConsumeFilter.class);
 
     private final OversizeValueStorage oversizeValueStorage;
 

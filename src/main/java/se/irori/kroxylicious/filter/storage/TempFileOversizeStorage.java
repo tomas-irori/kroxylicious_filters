@@ -1,15 +1,17 @@
 package se.irori.kroxylicious.filter.storage;
 
-import lombok.extern.log4j.Log4j2;
 import org.apache.kafka.common.record.Record;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Optional;
 
-@Log4j2
 public class TempFileOversizeStorage extends AbstractOversizeStorage {
+
+    private static final Logger log = LoggerFactory.getLogger(TempFileOversizeStorage.class);
 
     @Override
     public Optional<OversizeValueReference> store(Record record) {
@@ -42,6 +44,11 @@ public class TempFileOversizeStorage extends AbstractOversizeStorage {
             return Optional.empty();
         }
 
+    }
+
+    @Override
+    public StorageType getStorageType() {
+        return StorageType.LOCAL_TEMP_FILE;
     }
 
 }

@@ -5,9 +5,7 @@ import io.kroxylicious.proxy.filter.FilterFactory;
 import io.kroxylicious.proxy.filter.FilterFactoryContext;
 import io.kroxylicious.proxy.plugin.Plugin;
 import io.kroxylicious.proxy.plugin.PluginConfigurationException;
-import lombok.extern.log4j.Log4j2;
 import se.irori.kroxylicious.filter.storage.StorageType;
-import se.irori.kroxylicious.filter.storage.TempFileOversizeStorage;
 
 import java.util.stream.Collectors;
 
@@ -16,7 +14,7 @@ import static java.util.Arrays.stream;
 import static java.util.Objects.requireNonNull;
 
 @Plugin(configType = OversizeFilterConfig.class)
-@Log4j2
+//@Log4j2
 public class OversizeConsumeFilterFactory extends OversizeFilterFactory implements FilterFactory<OversizeFilterConfig, Object> {
 
     private OversizeFilterConfig config;

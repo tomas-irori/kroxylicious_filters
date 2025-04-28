@@ -6,6 +6,8 @@ import java.util.Optional;
 
 public interface OversizeValueStorage {
 
+    StorageType getStorageType();
+
     Optional<OversizeValueReference> store(Record record);
 
     Optional<String> read(OversizeValueReference oversizeValueReference);
