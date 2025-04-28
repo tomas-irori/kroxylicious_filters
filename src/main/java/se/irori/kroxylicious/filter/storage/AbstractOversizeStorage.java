@@ -9,12 +9,15 @@ import static java.util.Objects.requireNonNull;
 
 public abstract class AbstractOversizeStorage implements OversizeValueStorage {
 
-    protected static String getValueAsString(Record record) {
+    protected AbstractOversizeStorage() {
+    }
 
-        requireNonNull(record, "record is null");
-        requireNonNull(record.value(), "record.value() is null");
+    protected static String getValueAsString(Record kRecord) {
 
-        ByteBuffer copy = record.value().asReadOnlyBuffer();
+        requireNonNull(kRecord, "kRecord is null");
+        requireNonNull(kRecord.value(), "kRecord.value() is null");
+
+        ByteBuffer copy = kRecord.value().asReadOnlyBuffer();
         byte[] bytes = new byte[copy.remaining()];
         copy.get(bytes);
         return new String(bytes, StandardCharsets.UTF_8);

@@ -3,6 +3,7 @@ package se.irori.kroxylicious.filter.storage;
 import org.apache.kafka.common.record.Record;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import se.irori.kroxylicious.filter.exception.InvalidFileReferenceException;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -14,11 +15,11 @@ public class TempFileOversizeStorage extends AbstractOversizeStorage {
     private static final Logger log = LoggerFactory.getLogger(TempFileOversizeStorage.class);
 
     @Override
-    public Optional<OversizeValueReference> store(Record record) {
+    public Optional<OversizeValueReference> store(Record kRecord) {
 
         try {
             File file = File.createTempFile("oversize", ".data");
-            Files.writeString(file.toPath(), getValueAsString(record));
+            Files.writeString(file.toPath(), getValueAsString(kRecord));
             log.info("Persisted oversize message to {}", file.getAbsolutePath());
             return Optional.of(
                     OversizeValueReference.of(file.getAbsolutePath()));
@@ -34,7 +35,7 @@ public class TempFileOversizeStorage extends AbstractOversizeStorage {
         File file = new File(oversizeValueReference.getRef());
         if (!file.exists() || !file.isFile()) {
             log.error("Invalid reference: {}", oversizeValueReference.getRef());
-            throw new RuntimeException(); //TODO more specific exception?
+            throw new InvalidFileReferenceException(oversizeValueReference.getRef());
         }
         try {
             return Optional.of(
