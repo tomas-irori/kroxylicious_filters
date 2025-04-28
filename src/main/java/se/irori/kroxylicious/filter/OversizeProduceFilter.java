@@ -3,7 +3,6 @@ package se.irori.kroxylicious.filter;
 import io.kroxylicious.proxy.filter.FilterContext;
 import io.kroxylicious.proxy.filter.ProduceRequestFilter;
 import io.kroxylicious.proxy.filter.RequestFilterResult;
-import lombok.extern.log4j.Log4j2;
 import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.message.ProduceRequestData;
@@ -11,6 +10,8 @@ import org.apache.kafka.common.message.RequestHeaderData;
 import org.apache.kafka.common.record.*;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import se.irori.kroxylicious.filter.storage.OversizeValueReference;
 import se.irori.kroxylicious.filter.storage.OversizeValueStorage;
 
@@ -24,8 +25,9 @@ import java.util.concurrent.CompletionStage;
 import static java.lang.System.arraycopy;
 import static java.util.Objects.requireNonNull;
 
-@Log4j2
 public class OversizeProduceFilter implements ProduceRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(OversizeProduceFilter.class);
 
     private static final int maxMessageLength = 1024; //TODO make configurable
 
@@ -33,6 +35,7 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
 
     public OversizeProduceFilter(OversizeValueStorage oversizeValueStorage) {
         this.oversizeValueStorage = oversizeValueStorage;
+        //log.info("StorageType: {}", oversizeValueStorage.getStorageType());
     }
 
     @Override
@@ -44,7 +47,7 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
 
         try {
             final long requestSize = getRequestSize(produceRequestData);
-            log.trace("requestSize: {}", requestSize);
+            //log.error("requestSize: {}", requestSize);
             //TODO abort if requestSize too large?
 
             produceRequestData.topicData()
@@ -53,7 +56,7 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
 
                             BaseRecords records = partitionData.records();
                             if (!(records instanceof MemoryRecords)) {
-                                log.warn("Unsupported record type: {}", records.getClass().getName());
+                                //log.warn("Unsupported record type: {}", records.getClass().getName());
                                 continue;
                             }
 
@@ -61,7 +64,6 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
                             RecordBatchStreamer streamer = new RecordBatchStreamer(memoryRecords);
 
                             boolean hasOversize = false;
-                            int currentSize = 0;
                             List<MemoryRecords> chunks = new ArrayList<>();
                             MemoryRecordsBuilder builder = null;
 
@@ -199,7 +201,7 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
             MemoryRecords memoryRecords = (MemoryRecords) baseRecords;
             byteBuffer = memoryRecords.buffer().duplicate(); // duplicate to avoid modifying original
         } else {
-            log.error("Unsupported record type: {}", baseRecords.getClass().getName());
+            //log.error("Unsupported record type: {}", baseRecords.getClass().getName());
         }
         return byteBuffer;
     }

@@ -3,7 +3,6 @@ package se.irori.kroxylicious.filter;
 import io.kroxylicious.proxy.filter.FetchResponseFilter;
 import io.kroxylicious.proxy.filter.FilterContext;
 import io.kroxylicious.proxy.filter.ResponseFilterResult;
-import lombok.extern.log4j.Log4j2;
 import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.Headers;
@@ -23,8 +22,9 @@ import java.util.concurrent.CompletionStage;
 
 import static java.util.Objects.requireNonNull;
 
-@Log4j2
 public class OversizeConsumeFilter implements FetchResponseFilter {
+
+    //private static final Logger log = LoggerFactory.getLogger(OversizeConsumeFilter.class);
 
     private final OversizeValueStorage oversizeValueStorage;
 
@@ -65,7 +65,7 @@ public class OversizeConsumeFilter implements FetchResponseFilter {
                         if (optRef.isPresent()) {
                             optValue = oversizeValueStorage.read(optRef.get());
                             if (optValue.isEmpty()) {
-                                log.error("Failed to read value from storage, reference: {}", optRef.get());
+                                //log.error("Failed to read value from storage, reference: {}", optRef.get());
                             }
                         }
 
@@ -103,7 +103,7 @@ public class OversizeConsumeFilter implements FetchResponseFilter {
             }
 
         } catch (Exception e) {
-            log.error("Error processing fetch response: {}", e.getMessage(), e);
+            //log.error("Error processing fetch response: {}", e.getMessage(), e);
             throw new RuntimeException("Fetch filtering failed", e);
         }
 
