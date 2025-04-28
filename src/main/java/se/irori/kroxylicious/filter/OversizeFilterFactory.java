@@ -2,6 +2,7 @@ package se.irori.kroxylicious.filter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import se.irori.kroxylicious.filter.exception.OversizeFilterConfigException;
 import se.irori.kroxylicious.filter.storage.AWSS3OversizeStorage;
 import se.irori.kroxylicious.filter.storage.OversizeValueStorage;
 import se.irori.kroxylicious.filter.storage.StorageType;

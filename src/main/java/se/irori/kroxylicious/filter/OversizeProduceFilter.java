@@ -12,14 +12,13 @@ import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import se.irori.kroxylicious.filter.exception.MessageProcessingException;
+import se.irori.kroxylicious.filter.exception.PersistFailedException;
 import se.irori.kroxylicious.filter.storage.OversizeValueReference;
 import se.irori.kroxylicious.filter.storage.OversizeValueStorage;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 
 import static java.lang.System.arraycopy;
@@ -46,80 +45,73 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
             FilterContext filterContext) {
 
         try {
-            final long requestSize = getRequestSize(produceRequestData);
-            log.error("requestSize: {}", requestSize);
-            //TODO abort if requestSize too large?
-
-            produceRequestData.topicData()
-                    .forEach(topicData -> {
-                        for (ProduceRequestData.PartitionProduceData partitionData : topicData.partitionData()) {
-
-                            BaseRecords records = partitionData.records();
-                            if (!(records instanceof MemoryRecords)) {
-                                log.warn("Unsupported record type: {}", records.getClass().getName());
-                                continue;
-                            }
-
-                            MemoryRecords memoryRecords = (MemoryRecords) records;
-                            RecordBatchStreamer streamer = new RecordBatchStreamer(memoryRecords);
-
-                            boolean hasOversize = false;
-                            List<MemoryRecords> chunks = new ArrayList<>();
-                            MemoryRecordsBuilder builder = null;
-
-                            while (streamer.hasNext()) {
-
-                                Record record = streamer.next();
-                                requireNonNull(record, "record is null");
-
-                                if (isTooLargeRecord(record)) {
-                                    hasOversize = true;
-
-                                    ByteBuffer keyByteBuffer = record.key() == null ? null : record.key().duplicate();
-
-                                    Optional<OversizeValueReference> optRef = oversizeValueStorage.store(record);
-                                    if (optRef.isEmpty()) {
-                                        throw new RuntimeException("Failed to persist oversize message");
-                                    }
-                                    final OversizeValueReference oversizeValueReference = optRef.get();
-
-                                    Header[] newHeaders = new Header[record.headers().length + 1];
-                                    arraycopy(record.headers(), 0, newHeaders, 0, record.headers().length);
-                                    newHeaders[record.headers().length] = createReferenceHeader(oversizeValueReference);
-
-                                    if (builder == null) {
-                                        builder = createMemoryRecordsBuilder(); //TODO need to close builder??
-                                    }
-
-                                    builder.append(
-                                            new SimpleRecord(
-                                                    record.timestamp(),
-                                                    keyByteBuffer,
-                                                    ByteBuffer.allocate(0),
-                                                    newHeaders));
-                                } else {
-                                    if (hasOversize) {
-                                        builder.append(record);
-                                    }
-                                }
-
-                            }
-
-                            if (hasOversize) {
-                                requireNonNull(builder, "MemoryRecordsBuilder must not be null");
-                                partitionData.setRecords(builder.build());
-                            }
-
-                        }
-                    });
-
+            for (ProduceRequestData.TopicProduceData topicData : produceRequestData.topicData()) {
+                for (ProduceRequestData.PartitionProduceData partitionData : topicData.partitionData()) {
+                    processPartition(partitionData);
+                }
+            }
         } catch (Exception e) {
             log.error("{}: Message: {}", getClass().getName(), e.getMessage(), e);
-            throw new RuntimeException("Processing of messages failed");
+            throw new MessageProcessingException();
         }
 
         return filterContext.forwardRequest(requestHeaderData, produceRequestData);
     }
+
+    private void processPartition(ProduceRequestData.PartitionProduceData partitionData) {
+        BaseRecords records = partitionData.records();
+        if (!(records instanceof MemoryRecords memoryRecords)) {
+            log.warn("Unsupported record type: {}", records.getClass().getName());
+            return;
+        }
+
+        RecordBatchStreamer streamer = new RecordBatchStreamer(memoryRecords);
+        boolean hasOversize = false;
+
+        try (MemoryRecordsBuilder builder = createMemoryRecordsBuilder()) {
+            while (streamer.hasNext()) {
+                Record kRecord = requireNonNull(streamer.next(), "Record is null");
+
+                if (isTooLargeRecord(kRecord)) {
+                    hasOversize = true;
+                    builder.append(createReferenceRecord(kRecord));
+                } else if (hasOversize) {
+                    builder.append(kRecord);
+                }
+            }
+
+            if (hasOversize) {
+                partitionData.setRecords(builder.build());
+            }
+        } catch (Exception e) {
+            log.error("Error processing partition: {}", e.getMessage(), e);
+            throw new PersistFailedException();
+        }
+    }
+
+    private SimpleRecord createReferenceRecord(Record kRecord) {
+        ByteBuffer keyCopy = kRecord.key() == null ? null : kRecord.key().duplicate();
+
+        OversizeValueReference reference = oversizeValueStorage.store(kRecord)
+                .orElseThrow(PersistFailedException::new);
+
+        Header[] newHeaders = extendHeadersWithReference(kRecord.headers(), reference);
+
+        return new SimpleRecord(
+                kRecord.timestamp(),
+                keyCopy,
+                ByteBuffer.allocate(0), // Replace the value with empty buffer
+                newHeaders
+        );
+    }
+
+    private Header[] extendHeadersWithReference(Header[] originalHeaders, OversizeValueReference reference) {
+        Header[] newHeaders = new Header[originalHeaders.length + 1];
+        arraycopy(originalHeaders, 0, newHeaders, 0, originalHeaders.length);
+        newHeaders[originalHeaders.length] = createReferenceHeader(reference);
+        return newHeaders;
+    }
+
 
     private static Header createReferenceHeader(final OversizeValueReference oversizeValueReference) {
 
@@ -134,46 +126,16 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
 
     }
 
-    private static boolean isTooLargeRecord(Record record) {
-        return record.value() != null &&
-                record.value().remaining() > maxMessageLength;
-    }
-
-    private long getRequestSize(ProduceRequestData produceRequestData) {
-
-        long requestSize = 0L;
-        for (ProduceRequestData.TopicProduceData topicData : produceRequestData.topicData()) {
-            for (ProduceRequestData.PartitionProduceData partitionData : topicData.partitionData()) {
-                ByteBuffer byteBuffer = getByteBuffer(partitionData.records());
-                if (byteBuffer == null) {
-                    continue;
-                }
-                for (RecordBatch recordBatch : MemoryRecords.readableRecords(byteBuffer).batches()) {
-                    for (Record record : recordBatch) {
-                        requestSize += getRecordSize(record);
-                    }
-                }
-            }
-        }
-        return requestSize;
-    }
-
-    private long getRecordSize(Record record) {
-
-        long recordSize = record.key().remaining();
-        recordSize += record.value().remaining();
-        for (Header header : record.headers()) {
-            recordSize += header.key().length();
-            recordSize += header.value().length;
-        }
-        return recordSize;
+    private static boolean isTooLargeRecord(Record kRecord) {
+        return kRecord.value() != null &&
+                kRecord.value().remaining() > maxMessageLength;
     }
 
     private static MemoryRecordsBuilder createMemoryRecordsBuilder() {
 
         final int bufferSize = 1024 * 1024;
 
-        MemoryRecordsBuilder builder = new MemoryRecordsBuilder(
+        return new MemoryRecordsBuilder(
                 new ByteBufferOutputStream(bufferSize),
                 RecordBatch.CURRENT_MAGIC_VALUE,
                 Compression.NONE,
@@ -189,21 +151,6 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
                 bufferSize,
                 -1
         );
-        return builder;
-    }
-
-    private static ByteBuffer getByteBuffer(BaseRecords baseRecords) {
-
-        requireNonNull(baseRecords, "baseRecords is null");
-
-        ByteBuffer byteBuffer = null;
-        if (baseRecords instanceof MemoryRecords) {
-            MemoryRecords memoryRecords = (MemoryRecords) baseRecords;
-            byteBuffer = memoryRecords.buffer().duplicate(); // duplicate to avoid modifying original
-        } else {
-            log.error("Unsupported record type: {}", baseRecords.getClass().getName());
-        }
-        return byteBuffer;
     }
 
 }

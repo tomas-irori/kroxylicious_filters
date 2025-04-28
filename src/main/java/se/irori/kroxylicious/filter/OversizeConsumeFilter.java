@@ -14,6 +14,8 @@ import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import se.irori.kroxylicious.filter.exception.FetchResponseProcessingException;
+import se.irori.kroxylicious.filter.exception.PartitionProcessingException;
 import se.irori.kroxylicious.filter.storage.OversizeValueReference;
 import se.irori.kroxylicious.filter.storage.OversizeValueStorage;
 
@@ -49,68 +51,72 @@ public class OversizeConsumeFilter implements FetchResponseFilter {
         try {
             for (FetchResponseData.FetchableTopicResponse topicResponse : fetchResponseData.responses()) {
                 for (FetchResponseData.PartitionData partition : topicResponse.partitions()) {
-
-                    MemoryRecords memoryRecords = (MemoryRecords) partition.records();
-                    RecordBatchStreamer streamer = new RecordBatchStreamer(memoryRecords);
-
-                    MemoryRecordsBuilder builder = null;
-                    boolean hasOversize = false;
-
-                    while (streamer.hasNext()) {
-                        Record record = streamer.next();
-                        requireNonNull(record, "record is null");
-
-                        ByteBuffer keyByteBuffer = record.key() == null ? null : record.key().duplicate();
-
-                        Optional<OversizeValueReference> optRef = extractReference(record.headers());
-                        Optional<String> optValue = Optional.empty();
-                        if (optRef.isPresent()) {
-                            optValue = oversizeValueStorage.read(optRef.get());
-                            if (optValue.isEmpty()) {
-                                log.error("Failed to read value from storage, reference: {}", optRef.get());
-                            }
-                        }
-
-                        if (optValue.isPresent()) {
-                            hasOversize = true;
-                            Headers newHeaders = new RecordHeaders(record.headers());
-                            newHeaders.remove(OversizeValueReference.HEADER_KEY);
-
-                            if (builder == null) {
-                                builder = createMemoryRecordsBuilder(); //TODO need to close builder??
-                            }
-
-                            //builder.append(newRecord);
-                            builder.appendWithOffset(
-                                    record.offset(),
-                                    new SimpleRecord(
-                                            record.timestamp(),
-                                            keyByteBuffer,
-                                            ByteBuffer.wrap(optValue.get().getBytes(StandardCharsets.UTF_8)),
-                                            newHeaders.toArray())); //TODO why does a append() seem to work on Produce but not here?
-                        } else {
-                            if (hasOversize) {
-                                builder.append(record);
-                            }
-
-                        }
-                    }
-
-                    if (hasOversize) {
-                        MemoryRecords updatedMemoryRecords = builder.build();
-                        partition.setRecords(updatedMemoryRecords);
-                    }
-
+                    processPartition(partition);
                 }
             }
-
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             log.error("Error processing fetch response: {}", e.getMessage(), e);
-            throw new RuntimeException("Fetch filtering failed", e);
+            throw new FetchResponseProcessingException( e);
         }
 
         return filterContext.forwardResponse(responseHeaderData, fetchResponseData);
     }
+
+    private void processPartition(FetchResponseData.PartitionData partition) {
+        MemoryRecords memoryRecords = (MemoryRecords) partition.records();
+        RecordBatchStreamer streamer = new RecordBatchStreamer(memoryRecords);
+
+        boolean hasOversize = false;
+
+        try (MemoryRecordsBuilder builder = createMemoryRecordsBuilder()) {
+            while (streamer.hasNext()) {
+                Record kRecord = requireNonNull(streamer.next(), "kRecord is null");
+                Optional<String> resolvedValue = resolveOversizeValue(kRecord);
+                if (resolvedValue.isPresent()) {
+                    hasOversize = true;
+                    builder.appendWithOffset(
+                            kRecord.offset(),
+                            createRecordWithResolvedValue(kRecord, resolvedValue.get()));
+                } else if (hasOversize) {
+                    builder.append(kRecord);
+                }
+            }
+
+            if (hasOversize) {
+                partition.setRecords(builder.build());
+            }
+        } catch (RuntimeException e) {
+            log.error("Error processing partition: {}", e.getMessage(), e);
+            throw new PartitionProcessingException(e);
+        }
+    }
+
+
+    private Optional<String> resolveOversizeValue(Record kRecord) {
+        return extractReference(kRecord.headers())
+                .flatMap(ref -> {
+                    Optional<String> value = oversizeValueStorage.read(ref);
+                    if (value.isEmpty()) {
+                        log.error("Failed to read value from storage, reference: {}", ref);
+                    }
+                    return value;
+                });
+    }
+
+    private SimpleRecord createRecordWithResolvedValue(Record original, String newValue) {
+        Headers newHeaders = new RecordHeaders(original.headers());
+        newHeaders.remove(OversizeValueReference.HEADER_KEY);
+
+        ByteBuffer keyBuffer = original.key() == null ? null : original.key().duplicate();
+
+        return new SimpleRecord(
+                original.timestamp(),
+                keyBuffer,
+                ByteBuffer.wrap(newValue.getBytes(StandardCharsets.UTF_8)),
+                newHeaders.toArray()
+        );
+    }
+
 
     private Optional<OversizeValueReference> extractReference(Header[] headers) {
 

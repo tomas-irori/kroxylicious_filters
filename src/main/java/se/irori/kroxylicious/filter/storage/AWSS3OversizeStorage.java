@@ -24,17 +24,14 @@ public class AWSS3OversizeStorage extends AbstractOversizeStorage {
     private final S3Client s3Client;
 
     private static final String LOCALSTACK_URL = "http://localhost:4566";
-    private final String baseUrl = LOCALSTACK_URL; // TODO move to config
-    private final boolean isLocalStack = baseUrl.equals(LOCALSTACK_URL);
+    private static final String baseUrl = LOCALSTACK_URL; // TODO move to config
+    private static final boolean isLocalStack = baseUrl.equals(LOCALSTACK_URL); //
 
-    private final Region region = Region.US_EAST_1; // TODO move to config
-    private final String bucket = "oversize-storage"; // TODO move to config
-    private final String bucketUrl = getBucketUrl();
+    private static final Region region = Region.US_EAST_1; // TODO move to config
+    private static final String BUCKET_NAME = "oversize-storage"; // TODO move to config
+    private static final String bucketUrl = getBucketUrl();
 
     public AWSS3OversizeStorage() {
-
-        log.info("bucketUrl: {}", bucketUrl);
-
 
         this.s3Client = S3Client.builder()
                 .endpointOverride(URI.create(baseUrl)) // TODO move to config
@@ -54,25 +51,17 @@ public class AWSS3OversizeStorage extends AbstractOversizeStorage {
                 )
                 .build();
 
-        // Create bucket (if not exists)
-//        try {
-//            s3Client.createBucket(CreateBucketRequest.builder().bucket(bucketUrl).build());
-//        } catch (BucketAlreadyOwnedByYouException ignored) {
-//        } catch (Exception e) {
-//            log.error("{} Message: {}", e, getClass().getSimpleName(), e);
-//        }
-
     }
 
     @Override
-    public Optional<OversizeValueReference> store(Record record) {
+    public Optional<OversizeValueReference> store(Record kRecord) {
 
         try {
             final String key = UUID.randomUUID().toString();
 
             s3Client.putObject(
                     PutObjectRequest.builder()
-                            .bucket(bucket)
+                            .bucket(BUCKET_NAME)
                             .key(key)
                             .applyMutation(builder -> {
                                 if (isLocalStack) {
@@ -80,7 +69,7 @@ public class AWSS3OversizeStorage extends AbstractOversizeStorage {
                                 }
                             })
                             .build(),
-                    RequestBody.fromString(getValueAsString(record)));
+                    RequestBody.fromString(getValueAsString(kRecord)));
 
             return Optional.of(
                     OversizeValueReference.of(format("%s/%s", bucketUrl, key)));
@@ -103,7 +92,7 @@ public class AWSS3OversizeStorage extends AbstractOversizeStorage {
             return Optional.of(
                     new String(
                             s3Client.getObject(builder -> builder
-                                    .bucket(bucket)
+                                    .bucket(BUCKET_NAME)
                                     .key(key)).readAllBytes()));
         } catch (Exception e) {
             log.error("Read failed, error message: {}", e.getMessage(), e);
@@ -112,10 +101,10 @@ public class AWSS3OversizeStorage extends AbstractOversizeStorage {
 
     }
 
-    private String getBucketUrl() {
+    private static String getBucketUrl() {
         return isLocalStack ?
-                format("%s/%s", LOCALSTACK_URL, bucket) :
-                format("https://%s.s3.%s.amazonaws.com", bucket, region);
+                format("%s/%s", LOCALSTACK_URL, BUCKET_NAME) :
+                format("https://%s.s3.%s.amazonaws.com", BUCKET_NAME, region);
     }
 
     @Override
