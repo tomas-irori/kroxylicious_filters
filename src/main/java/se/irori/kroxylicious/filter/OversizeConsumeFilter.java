@@ -12,6 +12,8 @@ import org.apache.kafka.common.message.ResponseHeaderData;
 import org.apache.kafka.common.record.*;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.utils.ByteBufferOutputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import se.irori.kroxylicious.filter.storage.OversizeValueReference;
 import se.irori.kroxylicious.filter.storage.OversizeValueStorage;
 
@@ -24,7 +26,7 @@ import static java.util.Objects.requireNonNull;
 
 public class OversizeConsumeFilter implements FetchResponseFilter {
 
-    //private static final Logger log = LoggerFactory.getLogger(OversizeConsumeFilter.class);
+    private static final Logger log = LoggerFactory.getLogger(OversizeConsumeFilter.class);
 
     private final OversizeValueStorage oversizeValueStorage;
 
@@ -65,7 +67,7 @@ public class OversizeConsumeFilter implements FetchResponseFilter {
                         if (optRef.isPresent()) {
                             optValue = oversizeValueStorage.read(optRef.get());
                             if (optValue.isEmpty()) {
-                                //log.error("Failed to read value from storage, reference: {}", optRef.get());
+                                log.error("Failed to read value from storage, reference: {}", optRef.get());
                             }
                         }
 
@@ -103,7 +105,7 @@ public class OversizeConsumeFilter implements FetchResponseFilter {
             }
 
         } catch (Exception e) {
-            //log.error("Error processing fetch response: {}", e.getMessage(), e);
+            log.error("Error processing fetch response: {}", e.getMessage(), e);
             throw new RuntimeException("Fetch filtering failed", e);
         }
 

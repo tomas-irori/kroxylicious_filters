@@ -67,33 +67,46 @@ public class AWSS3OversizeStorage extends AbstractOversizeStorage {
     @Override
     public Optional<OversizeValueReference> store(Record record) {
 
-        log.error("xxx store: {}", this);
-
         try {
             final String key = UUID.randomUUID().toString();
-            log.error("key: {}", key);
-
-            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                    .bucket(bucket)
-                    .key(key)
-                    .applyMutation(builder -> {
-                        if (isLocalStack) {
-                            builder.checksumAlgorithm((String) null);
-                        }
-                    })
-                    .build();
-
 
             s3Client.putObject(
-                    putObjectRequest,
+                    PutObjectRequest.builder()
+                            .bucket(bucket)
+                            .key(key)
+                            .applyMutation(builder -> {
+                                if (isLocalStack) {
+                                    builder.checksumAlgorithm((String) null);
+                                }
+                            })
+                            .build(),
                     RequestBody.fromString(getValueAsString(record)));
 
-            log.info("bucketUrl: {}", bucketUrl);
-
             return Optional.of(
-                    OversizeValueReference.of(bucketUrl + "/" + key));
+                    OversizeValueReference.of(format("%s/%s", bucketUrl, key)));
+
         } catch (Exception e) {
             log.error("Store failed, error message: {}", e.getMessage(), e);
+            return Optional.empty();
+        }
+
+    }
+
+    @Override
+    public Optional<String> read(OversizeValueReference oversizeValueReference) {
+
+        try {
+            final String key = oversizeValueReference.getRef()
+                    .substring(oversizeValueReference.getRef()
+                            .lastIndexOf('/') + 1);
+
+            return Optional.of(
+                    new String(
+                            s3Client.getObject(builder -> builder
+                                    .bucket(bucket)
+                                    .key(key)).readAllBytes()));
+        } catch (Exception e) {
+            log.error("Read failed, error message: {}", e.getMessage(), e);
             return Optional.empty();
         }
 
@@ -103,13 +116,6 @@ public class AWSS3OversizeStorage extends AbstractOversizeStorage {
         return isLocalStack ?
                 format("%s/%s", LOCALSTACK_URL, bucket) :
                 format("https://%s.s3.%s.amazonaws.com", bucket, region);
-    }
-
-    @Override
-    public Optional<String> read(OversizeValueReference oversizeValueReference) {
-
-        return Optional.empty();
-
     }
 
     @Override

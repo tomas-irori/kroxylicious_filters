@@ -35,7 +35,7 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
 
     public OversizeProduceFilter(OversizeValueStorage oversizeValueStorage) {
         this.oversizeValueStorage = oversizeValueStorage;
-        //log.info("StorageType: {}", oversizeValueStorage.getStorageType());
+        log.info("StorageType: {}", oversizeValueStorage.getStorageType());
     }
 
     @Override
@@ -47,7 +47,7 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
 
         try {
             final long requestSize = getRequestSize(produceRequestData);
-            //log.error("requestSize: {}", requestSize);
+            log.error("requestSize: {}", requestSize);
             //TODO abort if requestSize too large?
 
             produceRequestData.topicData()
@@ -56,7 +56,7 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
 
                             BaseRecords records = partitionData.records();
                             if (!(records instanceof MemoryRecords)) {
-                                //log.warn("Unsupported record type: {}", records.getClass().getName());
+                                log.warn("Unsupported record type: {}", records.getClass().getName());
                                 continue;
                             }
 
@@ -201,7 +201,7 @@ public class OversizeProduceFilter implements ProduceRequestFilter {
             MemoryRecords memoryRecords = (MemoryRecords) baseRecords;
             byteBuffer = memoryRecords.buffer().duplicate(); // duplicate to avoid modifying original
         } else {
-            //log.error("Unsupported record type: {}", baseRecords.getClass().getName());
+            log.error("Unsupported record type: {}", baseRecords.getClass().getName());
         }
         return byteBuffer;
     }
