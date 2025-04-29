@@ -14,6 +14,7 @@ To use:
 
 ## kroxylicious config file
 
+Configure ports
 ```
 #proxy-config.yaml
 
@@ -30,11 +31,50 @@ virtualClusters:
         bootstrapAddress: localhost:9192
     logNetwork: false
     logFrames: false
+```
+
+### AWS_S3
+
+``` 
 filterDefinitions:
   - name: oversizeProduceFilter
     type: OversizeProduceFilterFactory
     config:
-      persistorType: LOCAL_TEMP_FILE
+      storageType: AWS_S3
+      properties:
+        BASE_URL: ${BASE_URL}
+        REGION: ${REGION}
+        BUCKET_NAME: ${BUCKET_NAME}
+        S3_ACCESS_KEY_KEY: ${S3_ACCESS_KEY_KEY}
+        S3_SECRET_KEY: ${S3_SECRET_KEY}
+  - name: oversizeConsumeFilter
+    type: OversizeConsumeFilterFactory
+    config:
+      storageType: AWS_S3
+      properties:
+        BASE_URL: ${BASE_URL}
+        REGION: ${REGION}
+        BUCKET_NAME: ${BUCKET_NAME}
+        S3_ACCESS_KEY_KEY: ${S3_ACCESS_KEY_KEY}
+        S3_SECRET_KEY: ${S3_SECRET_KEY}
 defaultFilters:
   - oversizeProduceFilter
+  - oversizeConsumeFilter
+```
+
+### LOCAL_TEMP_FILE
+
+``` 
+filterDefinitions:
+- name: oversizeProduceFilter
+  type: OversizeProduceFilterFactory
+  config:
+  storageType: LOCAL_TEMP_FILE
+- name: oversizeConsumeFilter
+  type: OversizeConsumeFilterFactory
+  config:
+  storageType: LOCAL_TEMP_FILE
+  defaultFilters:
+- oversizeProduceFilter
+- oversizeConsumeFilter
 ```
