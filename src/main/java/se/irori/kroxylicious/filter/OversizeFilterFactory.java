@@ -27,7 +27,7 @@ public abstract class OversizeFilterFactory {
         if (storageType == LOCAL_TEMP_FILE) {
             return new TempFileOversizeStorage();
         } else if (storageType == AWS_S3) {
-            return new AWSS3OversizeStorage();
+            return new AWSS3OversizeStorage(config.properties());
         }
         log.error("Unsupported StorageType: {}", storageType);
         throw new OversizeFilterConfigException();
